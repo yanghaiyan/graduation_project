@@ -19,21 +19,20 @@ bool LKTracker::trackf2f(const Mat& img1, const Mat& img2, vector<Point2f> &poin
   //基于Forward-Backward Error的中值流跟踪方法
   //金字塔LK光流法跟踪
   //声明该并行区域分为若干个section,section之间的运行顺序为并行的关系      
-	
+	/*
 #pragma omp parallel sections
  {
       //forward trajectory 
-      #pragma omp section 
-        calcOpticalFlowPyrLK(img1, img2, points1, points2, status,
-            similarity, window_size, level, term_criteria, lambda, 0);
-
+      #pragma omp section 	 
+		 calcOpticalFlowPyrLK(img1, img2, points1, points2, status,
+			 similarity, window_size, level, term_criteria, lambda, 0);
        //backward trajectory 
       #pragma omp section
         calcOpticalFlowPyrLK(img2, img1, points2, pointsFB,
             FB_status, FB_error, window_size, level, term_criteria, lambda, 0);
 }
+*/
  
- /*
     //backward trajectory 后向轨迹跟踪
     calcOpticalFlowPyrLK(img1, img2, points1, points2, status,
         similarity, window_size, level, term_criteria, lambda, 0);
@@ -41,7 +40,7 @@ bool LKTracker::trackf2f(const Mat& img1, const Mat& img2, vector<Point2f> &poin
      //backward trajectory 后向轨迹跟踪
     calcOpticalFlowPyrLK(img2, img1, points2, pointsFB,
         FB_status, FB_error, window_size, level, term_criteria, lambda, 0);
-*/
+
   //Compute the real FB-error
   //原理很简单：从t时刻的图像的A点，跟踪到t+1时刻的图像B点；然后倒回来，从t+1时刻的图像的B点往回跟踪，
   //假如跟踪到t时刻的图像的C点，这样就产生了前向和后向两个轨迹，比较t时刻中 A点 和 C点 的距离，如果距离
@@ -63,7 +62,7 @@ void LKTracker::normCrossCorrelation(const Mat& img1,const Mat& img2, vector<Poi
         Mat rec0(10,10,CV_8U);
         Mat rec1(10,10,CV_8U);
         Mat res(1,1,CV_32F);
-
+#pragma  omp parallel for 
         for (int i = 0; i < points1.size(); i++) {
                 if (status[i] == 1) {  //为1表示该特征点跟踪成功
 						//从前一帧和当前帧图像中（以每个特征点为中心？）提取10x10象素矩形，使用亚象素精度
@@ -90,16 +89,19 @@ bool LKTracker::filterPts(vector<Point2f>& points1,vector<Point2f>& points2){
   //Get Error Medians
   simmed = median(similarity);   //找到相似度的中值
   size_t i, k;
+
   for( i=k = 0; i<points2.size(); ++i ){
         if( !status[i])
           continue;
-        if(similarity[i]> simmed){   //剩下 similarity[i]> simmed 的特征点
-          points1[k] = points1[i];   
-          points2[k] = points2[i];
-          FB_error[k] = FB_error[i];
-          k++;
-        }
-    }
+
+			if (similarity[i] > simmed) {   //剩下 similarity[i]> simmed 的特征点
+				points1[k] = points1[i];
+				points2[k] = points2[i];
+				FB_error[k] = FB_error[i];
+				k++;
+			}
+		}
+    
   if (k==0)
     return false;
   points1.resize(k);

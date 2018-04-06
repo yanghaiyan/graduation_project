@@ -582,6 +582,7 @@ void TLD::detect(const cv::Mat& frame){
   Mat patch;
   //级联分类器模块一：方差检测模块，利用积分图计算每个待检测窗口的方差，方差大于var阈值（目标patch方差的50%）的，
   //则认为其含有前景目标
+
   for (int i=0; i<grid.size(); i++){  //FIXME: BottleNeck 瓶颈
       if (getVar(grid[i],iisum,iisqsum) >= var){  //计算每一个扫描窗口的方差
           a++;
@@ -633,6 +634,7 @@ void TLD::detect(const cv::Mat& frame){
   Scalar mean, stdev;
   float nn_th = classifier.getNNTh();
   //级联分类器模块三：最近邻分类器检测模块
+
   for (int i=0;i<detections;i++){                                         //  for every remaining detection
       idx=dt.bb[i];                                                       //  Get the detected bounding box index
 	  patch = frame(grid[idx]);
@@ -642,10 +644,12 @@ void TLD::detect(const cv::Mat& frame){
       dt.patt[i]=tmp.patt[idx];
       //printf("Testing feature %d, conf:%f isin:(%d|%d|%d)\n",i,dt.conf1[i],dt.isin[i][0],dt.isin[i][1],dt.isin[i][2]);
       //相关相似度大于阈值，则认为含有前景目标
-	  if (dt.conf1[i]>nn_th){                                               //  idx = dt.conf1 > tld.model.thr_nn; % get all indexes that made it through the nearest neighbour
-          dbb.push_back(grid[idx]);                                         //  BB    = dt.bb(:,idx); % bounding boxes
-          dconf.push_back(dt.conf2[i]);                                     //  Conf  = dt.conf2(:,idx); % conservative confidences
-      }
+
+		  if (dt.conf1[i] > nn_th) {                                               //  idx = dt.conf1 > tld.model.thr_nn; % get all indexes that made it through the nearest neighbour
+			  dbb.push_back(grid[idx]);                                         //  BB    = dt.bb(:,idx); % bounding boxes
+			  dconf.push_back(dt.conf2[i]);                                     //  Conf  = dt.conf2(:,idx); % conservative confidences
+		  }
+
   }
   //打印检测到的可能存在目标的扫描窗口数（可以通过三个级联检测器的）
   if (dbb.size()>0){

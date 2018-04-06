@@ -170,8 +170,8 @@ int main(int argc, char * argv[]){
       cvtColor(frame, last_gray, CV_RGB2GRAY);  //转换为灰度图像
       frame.copyTo(first);  //拷贝作为第一帧
   }else{   //如果为读取摄像头，则设置获取的图像大小为320x240 
-      capture.set(CV_CAP_PROP_FRAME_WIDTH,340);  //340？？
-      capture.set(CV_CAP_PROP_FRAME_HEIGHT,240);
+      capture.set(CV_CAP_PROP_FRAME_WIDTH,720);  //340？？
+      capture.set(CV_CAP_PROP_FRAME_HEIGHT,480);
   }
 
   ///Initialization

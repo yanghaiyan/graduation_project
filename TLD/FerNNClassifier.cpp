@@ -1,4 +1,5 @@
 #include "FerNNClassifier.h"
+#include<omp.h>
 using namespace cv;
 using namespace std;
 
@@ -70,20 +71,26 @@ void FerNNClassifier::getFeatures(const cv::Mat& image, const int& scale_idx, ve
   int leaf;  //叶子  树的最终节点
   //每一个每类器维护一个后验概率的分布，这个分布有2^d个条目（entries），这里d是像素比较pixel comparisons
   //的个数，这里是structSize，即13个comparison，所以会产生2^13即8,192个可能的code，每一个code对应一个后验概率
-  for (int t=0; t<nstructs; t++){  //nstructs 表示树的个数 10
-      leaf=0;
-      for (int f=0; f<structSize; f++){  //表示每棵树特征的个数 13
-	    //struct Feature 特征结构体有一个运算符重载 bool operator ()(const cv::Mat& patch) const
-		//返回的patch图像片在(y1,x1)和(y2, x2)点的像素比较值，返回0或者1
-		//然后leaf就记录了这13位的二进制代码，作为特征
-          leaf = (leaf << 1) + features[scale_idx][t*nstructs+f](image);
-      }
-      fern[t] = leaf; 
+  int t;
+  const int nCore = omp_get_num_procs();
+#pragma omp parallel for num_threads(nCore)
+  for (t= 0; t<nstructs; t++) {  //nstructs 表示树的个数 10
+	  leaf = 0;
+	  int f;
+	  for ( f = 0; f<structSize; f++) {  //表示每棵树特征的个数 13
+											//struct Feature 特征结构体有一个运算符重载 bool operator ()(const cv::Mat& patch) const
+											//返回的patch图像片在(y1,x1)和(y2, x2)点的像素比较值，返回0或者1
+											//然后leaf就记录了这13位的二进制代码，作为特征
+		  leaf = (leaf << 1) + features[scale_idx][t*nstructs + f](image);
+	  }
+	  fern[t] = leaf;
   }
+ 
 }
 
 float FerNNClassifier::measure_forest(vector<int> fern) {
   float votes = 0;
+
   for (int i = 0; i < nstructs; i++) {
      // 后验概率posteriors[i][idx] = ((float)(pCounter[i][idx]))/(pCounter[i][idx] + nCounter[i][idx]);
       votes += posteriors[i][fern[i]];   //每棵树的每个特征值对应的后验概率累加值 作投票值？？
@@ -143,6 +150,7 @@ void FerNNClassifier::trainNN(const vector<cv::Mat>& nn_examples){
   vector<int> y(nn_examples.size(),0); //vector<T> v3(n, i); v3包含n个值为i的元素。y数组元素初始化为0
   y[0]=1;  //上面说到调用trainNN这个函数传入的nn_data样本集，只有一个pEx，在nn_data[0]
   vector<int> isin;
+
   for (int i=0; i<nn_examples.size(); i++){                          //  For each example
       //计算输入图像片与在线模型之间的相关相似度conf
       NNConf(nn_examples[i], isin, conf, dummy);                      //  Measure Relative similarity
@@ -190,26 +198,30 @@ void FerNNClassifier::NNConf(const Mat& example, vector<int>& isin,float& rsconf
   bool anyN=false;
   //比较图像片p到在线模型M的距离（相似度），计算正样本最近邻相似度，也就是将输入的图像片与
   //在线模型中所有的图像片进行匹配，找出最相似的那个图像片，也就是相似度的最大值
+#pragma omp parallel for
   for (int i=0;i<pEx.size();i++){
       matchTemplate(pEx[i], example, ncc, CV_TM_CCORR_NORMED);      // measure NCC to positive examples
       nccP=(((float*)ncc.data)[0]+1)*0.5;  //计算匹配相似度
       if (nccP>ncc_thesame)  //ncc_thesame: 0.95
         anyP=true;
-      if(nccP > maxP){
-          maxP=nccP;    //记录最大的相似度以及对应的图像片index索引值
-          maxPidx = i;
-          if(i<validatedPart)
-            csmaxP=maxP;
-      }
+#pragma omp critical
+	  {
+		  if (nccP > maxP) {
+			  maxP = nccP;    //记录最大的相似度以及对应的图像片index索引值
+			  maxPidx = i;
+			  if (i < validatedPart)
+				  csmaxP = maxP;
+		  }
+	  }
   }
   //计算负样本最近邻相似度
-  for (int i=0;i<nEx.size();i++){
-      matchTemplate(nEx[i],example,ncc,CV_TM_CCORR_NORMED);     //measure NCC to negative examples
-      nccN=(((float*)ncc.data)[0]+1)*0.5;
-      if (nccN>ncc_thesame)
-        anyN=true;
-      if(nccN > maxN)
-        maxN=nccN;
+  for (int i = 0; i < nEx.size(); i++) {
+	  matchTemplate(nEx[i], example, ncc, CV_TM_CCORR_NORMED);     //measure NCC to negative examples
+	  nccN = (((float*)ncc.data)[0] + 1)*0.5;
+	  if (nccN > ncc_thesame)
+		  anyN = true;
+	 if (nccN > maxN)
+			  maxN = nccN;
   }
   //set isin
   //if he query patch is highly correlated with any positive patch in the model then it is considered to be one of them
@@ -230,15 +242,18 @@ void FerNNClassifier::NNConf(const Mat& example, vector<int>& isin,float& rsconf
 }
 
 void FerNNClassifier::evaluateTh(const vector<pair<vector<int>,int> >& nXT, const vector<cv::Mat>& nExT){
-  float fconf;
-  for (int i=0;i<nXT.size();i++){
-  //所有基本分类器的后验概率的平均值如果大于thr_fern，则认为含有前景目标
-  //measure_forest返回的是所有后验概率的累加和，nstructs 为树的个数，也就是基本分类器的数目 ？？
-    fconf = (float) measure_forest(nXT[i].first)/nstructs;
-    if (fconf>thr_fern)  //thr_fern: 0.6 thrP定义为Positive thershold
-      thr_fern = fconf;  //取这个平均值作为 该集合分类器的 新的阈值，这就是训练？？
+  float fconf = 0;
+  float tempFern = thr_fern;
+
+  for (int i = 0; i < nXT.size(); i++) {
+	  //所有基本分类器的后验概率的平均值如果大于thr_fern，则认为含有前景目标
+	  //measure_forest返回的是所有后验概率的累加和，nstructs 为树的个数，也就是基本分类器的数目 
+		  fconf = (float)measure_forest(nXT[i].first) / nstructs;
+
+	  if (fconf > tempFern)  //thr_fern: 0.6 thrP定义为Positive thershold
+		  tempFern = fconf;  //取这个平均值作为 该集合分类器的 新的阈值，这就是训练
   }
-  
+  thr_fern = tempFern;
   vector <int> isin;
   float conf, dummy;
   for (int i=0; i<nExT.size(); i++){
