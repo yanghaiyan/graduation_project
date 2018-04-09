@@ -571,9 +571,11 @@ void TLD::detect(const cv::Mat& frame){
   dt.bb.clear();
   //GetTickCount返回从操作系统启动到现在所经过的时间
   double t = (double)getTickCount();
+
   Mat img(frame.rows, frame.cols, CV_8U);
   integral(frame,iisum,iisqsum);   //计算frame的积分图 
-  GaussianBlur(frame,img,Size(9,9),1.5);  //高斯模糊，去噪？
+  GaussianBlur(frame,img,Size(9,9),1.5);  //高斯模糊，去噪
+
   int numtrees = classifier.getNumStructs();
   float fern_th = classifier.getFernTh(); //getFernTh()返回thr_fern; 集合分类器的分类阈值
   vector <int> ferns(10);

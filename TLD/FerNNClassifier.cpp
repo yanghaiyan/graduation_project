@@ -1,9 +1,11 @@
 #include "FerNNClassifier.h"
+#include "kern.cu"
 #include<omp.h>
 using namespace cv;
 using namespace std;
 
 void FerNNClassifier::read(const FileNode& file){
+
   ///Classifier Parameters
   //下面这些参数通过程序开始运行时读入parameters.yml文件进行初始化
   valid = (float)file["valid"];
@@ -198,8 +200,10 @@ void FerNNClassifier::NNConf(const Mat& example, vector<int>& isin,float& rsconf
   bool anyN=false;
   //比较图像片p到在线模型M的距离（相似度），计算正样本最近邻相似度，也就是将输入的图像片与
   //在线模型中所有的图像片进行匹配，找出最相似的那个图像片，也就是相似度的最大值
-#pragma omp parallel for
-  for (int i=0;i<pEx.size();i++){
+  int i;
+  const int nCore = omp_get_num_procs();
+#pragma omp parallel for num_threads(nCore)
+  for ( i=0; i<pEx.size(); i++){
       matchTemplate(pEx[i], example, ncc, CV_TM_CCORR_NORMED);      // measure NCC to positive examples
       nccP=(((float*)ncc.data)[0]+1)*0.5;  //计算匹配相似度
       if (nccP>ncc_thesame)  //ncc_thesame: 0.95
@@ -244,18 +248,22 @@ void FerNNClassifier::NNConf(const Mat& example, vector<int>& isin,float& rsconf
 void FerNNClassifier::evaluateTh(const vector<pair<vector<int>,int> >& nXT, const vector<cv::Mat>& nExT){
   float fconf = 0;
   float tempFern = thr_fern;
-
+  const int nCore = omp_get_num_procs();
+#pragma omp parallel for num_threads(nCore)
   for (int i = 0; i < nXT.size(); i++) {
 	  //所有基本分类器的后验概率的平均值如果大于thr_fern，则认为含有前景目标
 	  //measure_forest返回的是所有后验概率的累加和，nstructs 为树的个数，也就是基本分类器的数目 
-		  fconf = (float)measure_forest(nXT[i].first) / nstructs;
-
-	  if (fconf > tempFern)  //thr_fern: 0.6 thrP定义为Positive thershold
-		  tempFern = fconf;  //取这个平均值作为 该集合分类器的 新的阈值，这就是训练
+	  fconf = (float)measure_forest(nXT[i].first) / nstructs;
+#pragma omp critical
+	  {
+		  if (fconf > tempFern)  //thr_fern: 0.6 thrP定义为Positive thershold
+			  tempFern = fconf;  //取这个平均值作为 该集合分类器的 新的阈值，这就是训练
+	  }
   }
   thr_fern = tempFern;
   vector <int> isin;
   float conf, dummy;
+
   for (int i=0; i<nExT.size(); i++){
       NNConf(nExT[i], isin, conf, dummy);
       if (conf > thr_nn)

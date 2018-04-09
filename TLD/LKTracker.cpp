@@ -62,16 +62,17 @@ void LKTracker::normCrossCorrelation(const Mat& img1,const Mat& img2, vector<Poi
         Mat rec0(10,10,CV_8U);
         Mat rec1(10,10,CV_8U);
         Mat res(1,1,CV_32F);
+		int i;
 #pragma  omp parallel for 
-        for (int i = 0; i < points1.size(); i++) {
+        for ( i = 0; i < points1.size(); i++) {
                 if (status[i] == 1) {  //为1表示该特征点跟踪成功
 						//从前一帧和当前帧图像中（以每个特征点为中心？）提取10x10象素矩形，使用亚象素精度
-                        getRectSubPix( img1, Size(10,10), points1[i],rec0 );   
-                        getRectSubPix( img2, Size(10,10), points2[i],rec1);
+                        getRectSubPix( img1, Size(10,10), points1[i], rec0 );   
+                        getRectSubPix( img2, Size(10,10), points2[i], rec1);
 						//匹配前一帧和当前帧中提取的10x10象素矩形，得到匹配后的映射图像
 						//CV_TM_CCOEFF_NORMED 归一化相关系数匹配法
 						//参数分别为：欲搜索的图像。搜索模板。比较结果的映射图像。指定匹配方法
-                        matchTemplate( rec0,rec1, res, CV_TM_CCOEFF_NORMED); 
+                        matchTemplate( rec0, rec1,  res,  CV_TM_CCOEFF_NORMED); 
                         similarity[i] = ((float *)(res.data))[0];  //得到各个特征点的相似度大小
 
                 } else {
